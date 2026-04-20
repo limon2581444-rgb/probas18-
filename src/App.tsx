@@ -76,7 +76,7 @@ export default function App() {
     return (
       <div className="h-screen w-full flex flex-col items-center justify-center bg-imo-bg">
         <Loader2 className="w-12 h-12 text-imo-blue animate-spin mb-4" />
-        <p className="text-slate-500 font-display font-medium">Connecting to ChatFlow...</p>
+        <p className="text-slate-500 font-display font-medium">Connecting to Probas Wife Sabe...</p>
       </div>
     );
   }
@@ -134,7 +134,7 @@ export default function App() {
               <div className="w-32 h-32 bg-imo-blue/5 rounded-[3rem] flex items-center justify-center mb-8 rotate-12">
                  <img src="https://picsum.photos/seed/welcome/200" className="w-24 h-24 rounded-[2.5rem] object-cover opacity-60 -rotate-12" />
               </div>
-              <h2 className="text-2xl font-display font-bold text-slate-800">Welcome to ChatFlow</h2>
+              <h2 className="text-2xl font-display font-bold text-slate-800">Welcome to Probas Wife Sabe</h2>
               <p className="text-slate-400 mt-2 max-w-sm">Select a chat to start messaging or find new contacts to connect with.</p>
             </div>
           )}

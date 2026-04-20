@@ -62,35 +62,45 @@ export default function AuthScreen() {
   };
 
   const handleGoogleSignIn = async () => {
+    setLoading(true);
     setError('');
+    console.log("Starting Google Sign-in...");
     try {
       const result = await signInWithPopup(auth, googleProvider);
-      // Check if sign-in is successful and if user has only one provider (meaning they might need to set a password/email backup)
+      console.log("Google Sign-in Success:", result.user.email);
       if (result.user.providerData.length === 1) {
         console.log("Set password needed - User only has one authentication provider linked.");
-        // Note: In a production app, we would redirect them to a profile settings page to link an email/password
       }
     } catch (err: any) {
-      console.error(err);
+      console.error("Google Auth Error:", err);
       if (err.code === 'auth/operation-not-allowed') {
-        setError('Google Sign-in is not enabled in your Firebase Console. Please enable it in Authentication > Sign-in method.');
+        setError('Google Sign-in is not enabled in your Firebase Console. Go to Authentication > Sign-in method and enable Google.');
+      } else if (err.code === 'auth/unauthorized-domain') {
+        setError(`Domain not authorized. Please add "${window.location.hostname}" to Authorized Domains in Firebase Authentication Settings.`);
+      } else if (err.code === 'auth/popup-closed-by-user') {
+        setError('Login popup was closed before finishing. Please try again.');
       } else {
-        setError('Google Sign-in failed. Please try again.');
+        setError(`Login failed: ${err.message || 'Unknown error'}`);
       }
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleFacebookSignIn = async () => {
+    setLoading(true);
     setError('');
     try {
       await signInWithPopup(auth, facebookProvider);
     } catch (err: any) {
-      console.error(err);
+      console.error("Facebook Auth Error:", err);
       if (err.code === 'auth/operation-not-allowed') {
         setError('Facebook Sign-in is not enabled in your Firebase Console.');
       } else {
-        setError('Facebook Sign-in failed.');
+        setError(`Facebook Sign-in failed: ${err.message}`);
       }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -129,9 +139,9 @@ export default function AuthScreen() {
           >
             <div className="text-center mb-8">
               <div className="w-20 h-20 bg-imo-blue rounded-[2rem] mx-auto flex items-center justify-center mb-6 shadow-lg rotate-12">
-                <span className="text-white text-3xl font-display font-bold -rotate-12">Flow</span>
+                <span className="text-white text-2xl font-display font-bold -rotate-12">Sabe</span>
               </div>
-              <h1 className="text-2xl font-display font-bold text-slate-800">ChatFlow</h1>
+              <h1 className="text-2xl font-display font-bold text-slate-800">Probas Wife Sabe</h1>
               <p className="text-slate-500 mt-2 text-sm">
                 {authMode === 'phone' ? 'Enter your phone number to continue' : 'Sign in with your email account'}
               </p>
@@ -140,10 +150,15 @@ export default function AuthScreen() {
             <div className="space-y-4">
               <button 
                 onClick={handleGoogleSignIn}
+                disabled={loading}
                 className="w-full py-4 bg-white border-2 border-slate-100 text-slate-700 rounded-2xl font-bold shadow-sm hover:bg-slate-50 transition-all transform active:scale-[0.98] flex items-center justify-center gap-3"
               >
-                <Google className="text-red-500 w-5 h-5" />
-                Continue with Google
+                {loading ? <Loader2 className="animate-spin text-imo-blue" /> : (
+                  <>
+                    <Google className="text-red-500 w-5 h-5" />
+                    Continue with Google
+                  </>
+                )}
               </button>
 
               <div className="relative flex items-center py-4">

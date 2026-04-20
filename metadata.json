@@ -1,6 +1,6 @@
 {
-  "name": "ChatFlow",
-  "description": "A high-performance real-time messaging application featuring encrypted-style authentication, multi-media chat, and integrated peer-to-peer voice calling. Optimized for broad device compatibility (Android 5.0+ / API 21).",
+  "name": "Probas Wife Sabe",
+  "description": "A high-performance real-time messaging application designed for secure communication and connectivity. Features multi-media chat, and integrated peer-to-peer voice calling.",
   "requestFramePermissions": ["camera", "microphone"],
   "majorCapabilities": []
 }

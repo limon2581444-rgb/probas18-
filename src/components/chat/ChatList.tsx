@@ -83,14 +83,15 @@ export default function ChatList({ onSelectChat, selectedChatId }: { onSelectCha
       <div className="p-6 pb-2">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-imo-blue/10 flex items-center justify-center overflow-hidden">
+            <div className="w-10 h-10 rounded-full bg-imo-blue/10 flex items-center justify-center overflow-hidden relative">
+              <div className="absolute inset-0 flex items-center justify-center opacity-10 font-display font-black text-xs rotate-12">Sabe</div>
               <img 
                 src={auth.currentUser?.photoURL || `https://ui-avatars.com/api/?name=${auth.currentUser?.displayName || 'User'}&background=random`} 
                 className="w-full h-full object-cover" 
               />
             </div>
             <div>
-              <h2 className="font-display font-bold text-lg text-slate-800 leading-tight">ChatFlow</h2>
+              <h2 className="font-display font-bold text-lg text-slate-800 leading-tight">Probas Wife Sabe</h2>
               <div className="flex items-center gap-1.5">
                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Active Now</p>
                 {auth.currentUser?.providerData.length === 1 && (
