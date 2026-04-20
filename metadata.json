@@ -1,0 +1,6 @@
+{
+  "name": "ChatFlow",
+  "description": "A high-performance real-time messaging application featuring encrypted-style authentication, multi-media chat, and integrated peer-to-peer voice calling. Optimized for broad device compatibility (Android 5.0+ / API 21).",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": []
+}
