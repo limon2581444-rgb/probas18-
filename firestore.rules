@@ -21,10 +21,17 @@ service cloud.firestore {
 
     // Validation Blueprints
     function isValidUser(data) {
-      return (!('displayName' in data) || (data.displayName is string && data.displayName.size() <= 100))
+      return (data.displayName is string && data.displayName.size() <= 100)
         && (!('photoURL' in data) || (data.photoURL is string || data.photoURL == null))
+        && (!('name' in data) || (data.name is string || data.name == null))
+        && (!('photo' in data) || (data.photo is string || data.photo == null))
         && (!('statusMessage' in data) || (data.statusMessage is string || data.statusMessage == null))
-        && (!('phoneNumber' in data) || (data.phoneNumber is string || data.phoneNumber == null));
+        && (!('phoneNumber' in data) || (data.phoneNumber is string || data.phoneNumber == null))
+        && (!('email' in data) || (data.email is string || data.email == null))
+        && (!('username' in data) || (data.username is string || data.username == null))
+        && (!('uid' in data) || (data.uid == request.auth.uid))
+        && (!('isOnline' in data) || (data.isOnline is bool))
+        && (!('lastSeen' in data) || (data.lastSeen is timestamp));
     }
 
     function isValidChat(data) {
@@ -34,19 +41,19 @@ service cloud.firestore {
     }
 
     function isValidMessage(data) {
-      return data.senderId == request.auth.uid
-        && data.createdAt == request.time
+      return (data.senderId == request.auth.uid || data.sender == request.auth.uid)
+        && (data.createdAt == request.time || data.time == request.time)
         && data.type in ['text', 'image', 'voice']
         && (!('text' in data) || (data.text is string && data.text.size() <= 2000))
-        && (!('mediaUrl' in data) || (data.mediaUrl is string && data.mediaUrl.size() <= 500));
+        && (!('mediaUrl' in data) || (data.mediaUrl is string && data.mediaUrl.size() <= 500))
+        && (!('image' in data) || (data.image is string && data.image.size() <= 600));
     }
 
     match /users/{userId} {
-      allow get: if isSignedIn();
-      allow list: if isSignedIn();
+      allow get, list: if isSignedIn();
       allow create: if isOwner(userId) && isValidUser(incoming());
       allow update: if isOwner(userId) && isValidUser(incoming())
-        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'statusMessage', 'isOnline', 'lastSeen']);
+        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'statusMessage', 'isOnline', 'lastSeen', 'email', 'username', 'uid', 'phoneNumber', 'name', 'photo']);
     }
 
     match /chats/{chatId} {
@@ -54,7 +61,6 @@ service cloud.firestore {
       allow list: if isSignedIn() && request.auth.uid in resource.data.participants;
       allow create: if isSignedIn() && isValidId(chatId) && isValidChat(incoming());
       allow update: if isSignedIn() && request.auth.uid in existing().participants
-        && isValidChat(incoming())
         && (
           incoming().diff(existing()).affectedKeys().hasOnly(['lastMessage', 'updatedAt'])
         );

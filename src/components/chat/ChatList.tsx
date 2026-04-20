@@ -83,23 +83,17 @@ export default function ChatList({ onSelectChat, selectedChatId }: { onSelectCha
       <div className="p-6 pb-2">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-imo-blue/10 flex items-center justify-center overflow-hidden relative">
-              <div className="absolute inset-0 flex items-center justify-center opacity-10 font-display font-black text-xs rotate-12">Sabe</div>
+            <div className="w-20 h-20 rounded-full border-4 border-imo-blue/20 p-1 flex items-center justify-center shrink-0">
               <img 
                 src={auth.currentUser?.photoURL || `https://ui-avatars.com/api/?name=${auth.currentUser?.displayName || 'User'}&background=random`} 
-                className="w-full h-full object-cover" 
+                className="w-full h-full rounded-full object-cover shadow-inner" 
               />
             </div>
             <div>
               <h2 className="font-display font-bold text-lg text-slate-800 leading-tight">Probas Wife Sabe</h2>
               <div className="flex items-center gap-1.5">
                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Active Now</p>
-                {auth.currentUser?.providerData.length === 1 && (
-                  <div className="flex items-center gap-1 bg-amber-50 px-1.5 py-0.5 rounded-full border border-amber-100">
-                    <div className="w-1 h-1 bg-amber-500 rounded-full animate-pulse"></div>
-                    <span className="text-[8px] text-amber-600 font-black uppercase tracking-tighter">Security Alert</span>
-                  </div>
-                )}
+                <span className="text-[10px] text-imo-blue font-bold">@{auth.currentUser?.email?.split('@')[0]}</span>
               </div>
             </div>
           </div>
@@ -116,24 +110,36 @@ export default function ChatList({ onSelectChat, selectedChatId }: { onSelectCha
           </div>
         </div>
 
-        <div className="relative mb-4">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-          <input 
-            type="text" 
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-            placeholder="Search by phone (+880...)" 
-            className="w-full bg-slate-50 border-none rounded-xl py-3 pl-10 pr-10 text-sm focus:ring-1 focus:ring-imo-blue transition-all outline-none"
-          />
-          {searchTerm && (
-            <button 
-              onClick={() => { setSearchTerm(''); setIsSearching(false); }}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500"
-            >
-              <X size={14} />
-            </button>
-          )}
+        <div className="relative mb-4 space-y-3">
+          <div className="relative group">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-imo-blue transition-colors" size={16} />
+            <input 
+              type="text" 
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+              placeholder="Search by phone (+880...)" 
+              className="w-full bg-slate-50 border-none rounded-xl py-3 pl-10 pr-10 text-sm focus:ring-1 focus:ring-imo-blue transition-all outline-none"
+            />
+            {searchTerm && (
+              <button 
+                onClick={() => { setSearchTerm(''); setIsSearching(false); }}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+          
+          <div className="relative group">
+            <div className="absolute left-3 -top-2 px-1 bg-white text-[10px] font-bold text-slate-400 z-10">Username</div>
+            <input 
+              type="text" 
+              readOnly
+              value={auth.currentUser?.email?.split('@')[0] || ''}
+              className="w-full bg-slate-50 border border-slate-100 rounded-xl py-3 px-4 text-sm font-medium text-slate-600 outline-none"
+            />
+          </div>
         </div>
       </div>
 

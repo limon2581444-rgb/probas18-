@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuthState } from 'react-firebase-hooks/auth';
-import { auth, db } from './lib/firebase';
+import { auth, db, saveUser } from './lib/firebase';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import AuthScreen from './components/auth/AuthScreen';
 import ChatList from './components/chat/ChatList';
@@ -50,25 +50,7 @@ export default function App() {
   // Ensure user document exists in Firestore
   useEffect(() => {
     if (user) {
-      const userRef = doc(db, 'users', user.uid);
-      getDoc(userRef).then((docSnap) => {
-        if (!docSnap.exists()) {
-          setDoc(userRef, {
-            uid: user.uid,
-            displayName: user.displayName || 'User',
-            photoURL: user.photoURL || null,
-            phoneNumber: user.phoneNumber || null,
-            isOnline: true,
-            lastSeen: serverTimestamp(),
-          });
-        } else {
-          setDoc(userRef, { 
-            isOnline: true, 
-            lastSeen: serverTimestamp(),
-            displayName: user.displayName || docSnap.data()?.displayName || 'User'
-          }, { merge: true });
-        }
-      });
+      saveUser().catch(console.error);
     }
   }, [user]);
 

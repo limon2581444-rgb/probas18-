@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Phone, Video, MoreVertical, Send, Smile, Paperclip, Mic, Image as ImageIcon, ChevronLeft, Loader2 } from 'lucide-react';
+import { Phone, Video, MoreVertical, Send, Smile, Paperclip, Mic, Image as ImageIcon, ChevronLeft, Loader2, Play, Pause, Trash2, StopCircle } from 'lucide-react';
 import { cn, formatTimestamp } from '../../lib/utils';
-import { db, auth, Message, Chat, UserProfile, uploadFile } from '../../lib/firebase';
+import { db, auth, Message, Chat, UserProfile, uploadFile, sendVoiceNote } from '../../lib/firebase';
 import { collection, query, orderBy, addDoc, serverTimestamp, doc, updateDoc } from 'firebase/firestore';
 import { useCollectionData, useDocumentData } from 'react-firebase-hooks/firestore';
 import { v4 as uuidv4 } from 'uuid';
 import { socket } from '../../lib/socket';
 import CallOverlay from './CallOverlay';
+import EmojiPicker, { EmojiClickData, Theme } from 'emoji-picker-react';
 
 export default function ChatWindow({ chatId, onBack }: { chatId: string, onBack: () => void }) {
   const [message, setMessage] = useState('');
@@ -15,6 +16,12 @@ export default function ChatWindow({ chatId, onBack }: { chatId: string, onBack:
   const [isCallOpen, setIsCallOpen] = useState(false);
   const [isVideoCall, setIsVideoCall] = useState(false);
   const [isOtherUserTyping, setIsOtherUserTyping] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -73,7 +80,7 @@ export default function ChatWindow({ chatId, onBack }: { chatId: string, onBack:
   // Real-time messages
   const messagesQuery = query(
     collection(db, 'chats', chatId, 'messages'),
-    orderBy('createdAt', 'asc')
+    orderBy('time', 'asc')
   );
   
   const [values, loading, , snapshot] = useCollectionData(messagesQuery);
@@ -158,6 +165,73 @@ export default function ChatWindow({ chatId, onBack }: { chatId: string, onBack:
       setSending(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
+  };
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      recorderRef.current = recorder;
+      audioChunksRef.current = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+        }
+      };
+
+      recorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        if (audioBlob.size > 0 && !isRecordingCancelled.current) {
+          setSending(true);
+          try {
+            if (otherParticipantId) {
+              await sendVoiceNote(audioBlob, otherParticipantId);
+            }
+          } catch (error) {
+            console.error("Error sending voice note:", error);
+          } finally {
+            setSending(false);
+          }
+        }
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      recorder.start();
+      setIsRecording(true);
+      isRecordingCancelled.current = false;
+      setRecordingDuration(0);
+      timerRef.current = setInterval(() => {
+        setRecordingDuration(prev => prev + 1);
+      }, 1000);
+    } catch (error) {
+      console.error("Error accessing microphone:", error);
+      alert("Microphone access is required for voice notes.");
+    }
+  };
+
+  const stopRecording = () => {
+    if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+      recorderRef.current.stop();
+    }
+    setIsRecording(false);
+    if (timerRef.current) clearInterval(timerRef.current);
+  };
+
+  const isRecordingCancelled = useRef(false);
+  const cancelRecording = () => {
+    isRecordingCancelled.current = true;
+    stopRecording();
+  };
+
+  const formatDuration = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const onEmojiClick = (emojiData: EmojiClickData) => {
+    setMessage(prev => prev + emojiData.emoji);
   };
 
   return (
@@ -248,8 +322,9 @@ export default function ChatWindow({ chatId, onBack }: { chatId: string, onBack:
           </div>
         ) : (
           messages?.map((msg, i) => {
-            const isMe = msg.senderId === auth.currentUser?.uid;
-            const time = msg.createdAt ? formatTimestamp(msg.createdAt.toDate()) : '';
+            const isMe = msg.senderId === auth.currentUser?.uid || (msg as any).sender === auth.currentUser?.uid;
+            const msgTime = msg.createdAt || (msg as any).time;
+            const time = msgTime ? formatTimestamp(msgTime.toDate()) : '';
             
             return (
               <motion.div
@@ -275,12 +350,39 @@ export default function ChatWindow({ chatId, onBack }: { chatId: string, onBack:
                     {msg.type === 'image' ? (
                       <div className="relative rounded-xl overflow-hidden group">
                         <img 
-                          src={msg.mediaUrl} 
+                          src={msg.image || msg.mediaUrl} 
                           alt="Shared image" 
                           className="max-h-60 w-full object-cover rounded-xl"
                           referrerPolicy="no-referrer"
                         />
                         <div className="absolute inset-0 bg-black/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                      </div>
+                    ) : msg.type === 'voice' ? (
+                      <div className="flex items-center gap-3 min-w-[200px]">
+                        <button className={cn(
+                          "w-10 h-10 rounded-full flex items-center justify-center transition-all",
+                          isMe ? "bg-white/20 text-white" : "bg-imo-blue/10 text-imo-blue"
+                        )}>
+                          <Play size={18} fill="currentColor" />
+                        </button>
+                        <div className="flex-grow">
+                          <div className={cn(
+                            "h-1 rounded-full w-full",
+                            isMe ? "bg-white/20" : "bg-slate-100"
+                          )}>
+                            <div className={cn(
+                              "h-full rounded-full w-1/3",
+                              isMe ? "bg-white" : "bg-imo-blue"
+                            )}></div>
+                          </div>
+                          <div className={cn(
+                            "text-[9px] mt-1 font-bold uppercase",
+                            isMe ? "text-white/60" : "text-slate-400"
+                          )}>
+                            Voice Note
+                          </div>
+                        </div>
+                        <audio src={msg.mediaUrl} className="hidden" controls />
                       </div>
                     ) : (
                       <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.text}</p>
@@ -330,55 +432,118 @@ export default function ChatWindow({ chatId, onBack }: { chatId: string, onBack:
       </div>
 
       {/* Input Area */}
-      <div className="p-6 bg-transparent">
+      <div className="p-6 bg-transparent relative">
+        <AnimatePresence>
+          {showEmojiPicker && (
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 20 }}
+              className="absolute bottom-24 right-6 z-50 shadow-2xl rounded-3xl overflow-hidden"
+            >
+              <EmojiPicker 
+                onEmojiClick={onEmojiClick} 
+                autoFocusSearch={false}
+                theme={Theme.LIGHT}
+                width={320}
+                height={400}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <div className="max-w-4xl mx-auto flex items-center gap-3">
-          <div className="flex-grow relative group">
-             <div className="absolute left-1.5 bottom-1.5 flex gap-1">
+          {isRecording ? (
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              className="flex-grow bg-white rounded-2xl p-2 px-4 shadow-sm border border-red-100 flex items-center justify-between"
+            >
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <div className="relative flex items-center justify-center">
+                    <div className="absolute inset-0 bg-red-400 rounded-full animate-ping opacity-25"></div>
+                    <div className="w-2.5 h-2.5 bg-red-500 rounded-full"></div>
+                  </div>
+                  <span className="font-mono text-sm font-bold text-slate-700">{formatDuration(recordingDuration)}</span>
+                </div>
+                <div className="h-4 w-[1px] bg-slate-100"></div>
+                <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest animate-pulse">Recording...</span>
+              </div>
+              
+              <div className="flex items-center gap-2">
                 <button 
-                  onClick={() => fileInputRef.current?.click()}
-                  className="p-2.5 text-slate-400 hover:text-imo-blue hover:bg-imo-bg rounded-xl transition-all"
+                  onClick={cancelRecording}
+                  className="p-3 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
                 >
-                  <Paperclip size={20} />
+                  <Trash2 size={20} />
                 </button>
-             </div>
-             <textarea 
-                value={message}
-                onChange={(e) => {
-                  setMessage(e.target.value);
-                  handleTyping();
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSendMessage();
-                  }
-                }}
-                placeholder="Type a message..."
-                rows={1}
-                className="w-full bg-white border-2 border-transparent focus:border-imo-blue/20 rounded-2xl py-4 pl-14 pr-14 text-sm shadow-sm transition-all outline-none resize-none min-h-[56px] leading-relaxed"
-             />
-             <div className="absolute right-1.5 bottom-1.5 flex gap-1">
-                <button className="p-2.5 text-slate-400 hover:text-imo-blue hover:bg-imo-bg rounded-xl transition-all">
-                  <Smile size={20} />
+                <div className="h-6 w-[1px] bg-slate-100"></div>
+                <button 
+                  onClick={stopRecording}
+                  className="p-3 bg-imo-blue text-white rounded-xl shadow-lg shadow-imo-blue/20 hover:scale-105 transition-all"
+                >
+                  <Send size={20} className="ml-0.5" />
                 </button>
-             </div>
-          </div>
-          <motion.button 
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={handleSendMessage}
-            disabled={!message.trim() || sending}
-            className={cn(
-              "w-14 h-14 rounded-2xl flex items-center justify-center transition-all shadow-lg",
-              message.trim() ? "bg-imo-blue text-white shadow-imo-blue/20" : "bg-white text-slate-400"
-            )}
-          >
-            {sending ? (
-              <Loader2 className="animate-spin" size={24} />
-            ) : (
-              message.trim() ? <Send size={24} className="ml-1" /> : <Mic size={24} />
-            )}
-          </motion.button>
+              </div>
+            </motion.div>
+          ) : (
+            <>
+              <div className="flex-grow relative group">
+                <div className="absolute left-1.5 bottom-1.5 flex gap-1">
+                    <button 
+                      onClick={() => fileInputRef.current?.click()}
+                      className="p-2.5 text-slate-400 hover:text-imo-blue hover:bg-imo-bg rounded-xl transition-all"
+                    >
+                      <Paperclip size={20} />
+                    </button>
+                </div>
+                <textarea 
+                    value={message}
+                    onChange={(e) => {
+                      setMessage(e.target.value);
+                      handleTyping();
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSendMessage();
+                      }
+                    }}
+                    placeholder="Type a message..."
+                    rows={1}
+                    className="w-full bg-white border-2 border-transparent focus:border-imo-blue/20 rounded-2xl py-4 pl-14 pr-14 text-sm shadow-sm transition-all outline-none resize-none min-h-[56px] leading-relaxed"
+                />
+                <div className="absolute right-1.5 bottom-1.5 flex gap-1">
+                    <button 
+                      onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                      className={cn(
+                        "p-2.5 rounded-xl transition-all",
+                        showEmojiPicker ? "bg-imo-blue text-white" : "text-slate-400 hover:text-imo-blue hover:bg-imo-bg"
+                      )}
+                    >
+                      <Smile size={20} />
+                    </button>
+                </div>
+              </div>
+              <motion.button 
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => message.trim() ? handleSendMessage() : startRecording()}
+                disabled={sending}
+                className={cn(
+                  "w-14 h-14 rounded-2xl flex items-center justify-center transition-all shadow-lg",
+                  message.trim() ? "bg-imo-blue text-white shadow-imo-blue/20" : "bg-white text-slate-400 hover:text-imo-blue"
+                )}
+              >
+                {sending ? (
+                  <Loader2 className="animate-spin" size={24} />
+                ) : (
+                  message.trim() ? <Send size={24} className="ml-1" /> : <Mic size={24} />
+                )}
+              </motion.button>
+            </>
+          )}
         </div>
       </div>
     </div>

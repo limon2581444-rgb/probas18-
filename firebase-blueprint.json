@@ -5,14 +5,19 @@
       "description": "User profile information",
       "type": "object",
       "properties": {
+        "uid": { "type": "string" },
+        "name": { "type": "string" },
         "displayName": { "type": "string" },
+        "photo": { "type": "string" },
         "photoURL": { "type": "string" },
         "phoneNumber": { "type": "string" },
+        "email": { "type": "string" },
+        "username": { "type": "string" },
         "statusMessage": { "type": "string" },
         "isOnline": { "type": "boolean" },
         "lastSeen": { "type": "string", "format": "date-time" }
       },
-      "required": ["displayName"]
+      "required": ["uid", "displayName"]
     },
     "Chat": {
       "title": "Chat",
@@ -39,12 +44,15 @@
       "type": "object",
       "properties": {
         "senderId": { "type": "string" },
+        "sender": { "type": "string" },
         "text": { "type": "string" },
         "type": { "type": "string", "enum": ["text", "image", "voice"] },
         "mediaUrl": { "type": "string" },
-        "timestamp": { "type": "string", "format": "date-time" }
+        "image": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "time": { "type": "string", "format": "date-time" }
       },
-      "required": ["senderId", "timestamp"]
+      "required": ["senderId"]
     }
   },
   "firestore": {
