@@ -6,6 +6,7 @@ import { db, auth, Message, Chat, UserProfile, uploadFile } from '../../lib/fire
 import { collection, query, orderBy, addDoc, serverTimestamp, doc, updateDoc } from 'firebase/firestore';
 import { useCollectionData, useDocumentData } from 'react-firebase-hooks/firestore';
 import { v4 as uuidv4 } from 'uuid';
+import { socket } from '../../lib/socket';
 import CallOverlay from './CallOverlay';
 
 export default function ChatWindow({ chatId, onBack }: { chatId: string, onBack: () => void }) {
@@ -13,8 +14,10 @@ export default function ChatWindow({ chatId, onBack }: { chatId: string, onBack:
   const [sending, setSending] = useState(false);
   const [isCallOpen, setIsCallOpen] = useState(false);
   const [isVideoCall, setIsVideoCall] = useState(false);
+  const [isOtherUserTyping, setIsOtherUserTyping] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Real-time chat metadata
   const chatRef = doc(db, 'chats', chatId);
@@ -26,6 +29,46 @@ export default function ChatWindow({ chatId, onBack }: { chatId: string, onBack:
   // Real-time other participant profile
   const otherUserRef = otherParticipantId ? doc(db, 'users', otherParticipantId) : null;
   const [otherUser] = useDocumentData(otherUserRef) as unknown as [UserProfile | undefined, boolean, any];
+
+  // Socket listener for typing
+  useEffect(() => {
+    const handleTypingStatus = (data: { chatId: string, isTyping: boolean }) => {
+      if (data.chatId === chatId) {
+        setIsOtherUserTyping(data.isTyping);
+      }
+    };
+
+    socket.on('typing-status', handleTypingStatus);
+    return () => {
+      socket.off('typing-status', handleTypingStatus);
+    };
+  }, [chatId]);
+
+  // Handle local typing emission
+  const handleTyping = () => {
+    if (!otherParticipantId) return;
+
+    // Emit typing true
+    socket.emit('typing', {
+      to: otherParticipantId,
+      chatId,
+      isTyping: true
+    });
+
+    // Clear existing timeout
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
+    // Set timeout to emit typing false
+    typingTimeoutRef.current = setTimeout(() => {
+      socket.emit('typing', {
+        to: otherParticipantId,
+        chatId,
+        isTyping: false
+      });
+    }, 3000);
+  };
 
   // Real-time messages
   const messagesQuery = query(
@@ -52,6 +95,14 @@ export default function ChatWindow({ chatId, onBack }: { chatId: string, onBack:
     setSending(true);
     const textToSend = message.trim();
     setMessage('');
+
+    // Stop typing indicator on send
+    if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+    }
+    if (otherParticipantId) {
+        socket.emit('typing', { to: otherParticipantId, chatId, isTyping: false });
+    }
     
     try {
       await addDoc(collection(db, 'chats', chatId, 'messages'), {
@@ -247,6 +298,35 @@ export default function ChatWindow({ chatId, onBack }: { chatId: string, onBack:
             );
           })
         )}
+        
+        {isOtherUserTyping && (
+          <motion.div
+            initial={{ opacity: 0, y: 5 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex justify-start"
+          >
+            <div className="bg-white/50 backdrop-blur-sm px-4 py-2 rounded-2xl flex items-center gap-2">
+              <div className="flex gap-1">
+                <motion.div 
+                  animate={{ scale: [1, 1.5, 1] }} 
+                  transition={{ repeat: Infinity, duration: 0.6 }}
+                  className="w-1 h-1 bg-imo-blue rounded-full"
+                />
+                <motion.div 
+                   animate={{ scale: [1, 1.5, 1] }} 
+                   transition={{ repeat: Infinity, duration: 0.6, delay: 0.2 }}
+                   className="w-1 h-1 bg-imo-blue rounded-full"
+                />
+                <motion.div 
+                   animate={{ scale: [1, 1.5, 1] }} 
+                   transition={{ repeat: Infinity, duration: 0.6, delay: 0.4 }}
+                   className="w-1 h-1 bg-imo-blue rounded-full"
+                />
+              </div>
+              <span className="text-[10px] font-bold text-imo-blue uppercase tracking-widest">Typing...</span>
+            </div>
+          </motion.div>
+        )}
       </div>
 
       {/* Input Area */}
@@ -263,7 +343,10 @@ export default function ChatWindow({ chatId, onBack }: { chatId: string, onBack:
              </div>
              <textarea 
                 value={message}
-                onChange={(e) => setMessage(e.target.value)}
+                onChange={(e) => {
+                  setMessage(e.target.value);
+                  handleTyping();
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();

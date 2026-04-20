@@ -53,6 +53,14 @@ async function startServer() {
       });
     });
 
+    socket.on("typing", ({ to, isTyping, chatId }) => {
+      io.to(to).emit("typing-status", {
+        from: socket.id, // Or rather use the UID room logic
+        isTyping,
+        chatId
+      });
+    });
+
     socket.on("end-call", ({ to }) => {
       io.to(to).emit("call-ended");
     });
