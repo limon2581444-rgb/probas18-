@@ -6,6 +6,8 @@ import { db, auth, Chat, UserProfile, getOrCreateChat } from '../../lib/firebase
 import { collection, query, where, orderBy, getDocs, doc } from 'firebase/firestore';
 import { useCollectionData, useDocumentData } from 'react-firebase-hooks/firestore';
 import { updatePassword } from 'firebase/auth';
+import ProfileModal from '../profile/ProfileModal';
+import { Camera } from 'lucide-react';
 
 export default function ChatList({ onSelectChat, selectedChatId }: { onSelectChat: (id: string) => void, selectedChatId?: string }) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -13,9 +15,14 @@ export default function ChatList({ onSelectChat, selectedChatId }: { onSelectCha
   const [searchResults, setSearchResults] = useState<UserProfile[]>([]);
   const [searchingDB, setSearchingDB] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [passwordStatus, setPasswordStatus] = useState<'idle' | 'success' | 'error'>('idle');
+
+  // Fetch current user's profile from Firestore
+  const currentUserRef = doc(db, 'users', auth.currentUser?.uid || 'none');
+  const [currentProfile] = useDocumentData(currentUserRef) as unknown as [UserProfile | undefined, boolean, any];
   
   // Real-time chats for the current user
   const chatsQuery = query(
@@ -53,8 +60,13 @@ export default function ChatList({ onSelectChat, selectedChatId }: { onSelectCha
     setIsSearching(true);
     try {
       const usersRef = collection(db, 'users');
-      // Search by phone number (exact match)
-      const q = query(usersRef, where('phoneNumber', '==', searchTerm.trim()));
+      // Search by phone number (exact match with +880 logic)
+      let queryPhone = searchTerm.trim();
+      if (!queryPhone.startsWith('+')) {
+        queryPhone = `+880${queryPhone}`;
+      }
+      
+      const q = query(usersRef, where('phoneNumber', '==', queryPhone));
       const snap = await getDocs(q);
       const results = snap.docs
         .map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile))
@@ -83,12 +95,19 @@ export default function ChatList({ onSelectChat, selectedChatId }: { onSelectCha
       <div className="p-6 pb-2">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
-            <div className="w-20 h-20 rounded-full border-4 border-imo-blue/20 p-1 flex items-center justify-center shrink-0">
+            <button 
+              onClick={() => setIsProfileOpen(true)}
+              className="relative group w-20 h-20 rounded-full border-4 border-imo-blue/20 p-1 flex items-center justify-center shrink-0 transition-transform active:scale-95"
+            >
               <img 
-                src={auth.currentUser?.photoURL || `https://ui-avatars.com/api/?name=${auth.currentUser?.displayName || 'User'}&background=random`} 
-                className="w-full h-full rounded-full object-cover shadow-inner" 
+                src={currentProfile?.photoURL || currentProfile?.photo || auth.currentUser?.photoURL || `https://ui-avatars.com/api/?name=${currentProfile?.displayName || auth.currentUser?.displayName || 'User'}&background=random`} 
+                className="w-full h-full rounded-full object-cover shadow-inner group-hover:opacity-80 transition-opacity" 
+                referrerPolicy="no-referrer"
               />
-            </div>
+              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                 <Camera className="text-white drop-shadow-lg" size={24} />
+              </div>
+            </button>
             <div>
               <h2 className="font-display font-bold text-lg text-slate-800 leading-tight">Probas Wife Sabe</h2>
               <div className="flex items-center gap-1.5">
@@ -162,12 +181,23 @@ export default function ChatList({ onSelectChat, selectedChatId }: { onSelectCha
                     onClick={() => handleStartChat(u.uid)}
                     className="w-full flex items-center gap-4 p-4 hover:bg-slate-50 rounded-2xl transition-all"
                   >
-                    <img src={u.photoURL || `https://ui-avatars.com/api/?name=${u.displayName}&background=random`} className="w-12 h-12 rounded-xl object-cover" />
-                    <div className="text-left">
-                      <p className="font-bold text-slate-800">{u.displayName}</p>
-                      <p className="text-xs text-slate-400">{u.phoneNumber}</p>
+                    <div className="w-16 h-16 rounded-[1.5rem] overflow-hidden shadow-sm relative shrink-0">
+                      <img 
+                        src={u.photoURL || `https://ui-avatars.com/api/?name=${u.displayName || 'User'}&background=random`} 
+                        className="w-full h-full object-cover" 
+                      />
+                      {u.isOnline && (
+                        <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-white rounded-full"></div>
+                      )}
                     </div>
-                    <MessageSquarePlus className="ml-auto text-imo-blue" size={20} />
+                    <div className="text-left flex-grow">
+                      <p className="font-bold text-slate-800 text-lg">{u.displayName || u.name || 'User'}</p>
+                      <p className="text-xs text-slate-400 font-medium">{u.phoneNumber}</p>
+                      {u.isOnline && <p className="text-[10px] text-green-500 font-bold uppercase tracking-wider mt-0.5">Online Now</p>}
+                    </div>
+                    <div className="w-12 h-12 bg-imo-blue/10 rounded-2xl flex items-center justify-center text-imo-blue shadow-sm group-hover:bg-imo-blue group-hover:text-white transition-all">
+                      <MessageSquarePlus size={24} />
+                    </div>
                   </button>
                 ))
               )}
@@ -248,6 +278,19 @@ export default function ChatList({ onSelectChat, selectedChatId }: { onSelectCha
               </div>
 
               <div className="space-y-6">
+                <button 
+                  onClick={() => {
+                    setShowSettings(false);
+                    setIsProfileOpen(true);
+                  }}
+                  className="w-full p-4 bg-slate-50 rounded-2xl flex items-center gap-4 hover:bg-slate-100 transition-all border border-slate-100"
+                >
+                   <div className="w-10 h-10 rounded-full bg-imo-blue text-white flex items-center justify-center shadow-sm">
+                      <Camera size={20} />
+                   </div>
+                   <div className="text-left font-bold text-slate-800">Update Profile Picture</div>
+                </button>
+
                 <div className="bg-slate-50 rounded-2xl p-4 flex items-start gap-3">
                   <ShieldCheck className="text-imo-blue shrink-0 mt-0.5" size={20} />
                   <div>
@@ -297,6 +340,8 @@ export default function ChatList({ onSelectChat, selectedChatId }: { onSelectCha
           </div>
         )}
       </AnimatePresence>
+
+      <ProfileModal isOpen={isProfileOpen} onClose={() => setIsProfileOpen(false)} />
     </div>
   );
 }

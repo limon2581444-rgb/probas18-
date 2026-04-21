@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, FacebookAuthProvider } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, FacebookAuthProvider, updateProfile } from 'firebase/auth';
 import { getFirestore, doc, getDoc, setDoc, serverTimestamp, collection, query, where, getDocs, addDoc, updateDoc } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
@@ -14,9 +14,28 @@ export const facebookProvider = new FacebookAuthProvider();
 
 // Utility for file uploads
 export async function uploadFile(file: File, path: string) {
-  const storageRef = ref(storage, path);
-  await uploadBytes(storageRef, file);
-  return getDownloadURL(storageRef);
+  console.log("Attempting upload to bucket:", firebaseConfig.storageBucket);
+  
+  const uploadTask = async () => {
+    const storageRef = ref(storage, path);
+    await uploadBytes(storageRef, file);
+    return getDownloadURL(storageRef);
+  };
+
+  // 45 second timeout
+  const timeout = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error("Upload timed out. Is Firebase Storage enabled?")), 45000)
+  );
+
+  try {
+    return await Promise.race([uploadTask(), timeout]) as string;
+  } catch (error: any) {
+    console.error("Firebase Storage Error:", error);
+    if (error.code === 'storage/retry-limit-exceeded' || error.message?.includes('timed out')) {
+      throw new Error("Could not connect to Firebase Storage. Please ensure 'Storage' is enabled in your Firebase Console and your internet is stable.");
+    }
+    throw error;
+  }
 }
 
 // Deterministic Chat ID generation matching requested logic
@@ -53,21 +72,55 @@ export async function getOrCreateChat(targetUid: string) {
   return chatId;
 }
 
-// Utility to save or update user profile exactly as requested
+// Utility to save or update user profile
 export async function saveUser() {
   const user = auth.currentUser;
   if (!user) return;
 
   const userRef = doc(db, 'users', user.uid);
-  await setDoc(userRef, {
+  const userDoc = await getDoc(userRef);
+  
+  const userData = {
     name: user.displayName,
     email: user.email,
     photo: user.photoURL,
+    photoURL: user.photoURL,
     uid: user.uid,
-    username: user.email ? user.email.split("@")[0] : null,
+    phoneNumber: user.phoneNumber,
+    username: user.email ? user.email.split("@")[0] : (user.phoneNumber ? user.phoneNumber.slice(-4) : null),
     lastSeen: serverTimestamp(),
     isOnline: true
-  }, { merge: true });
+  };
+
+  if (!userDoc.exists()) {
+    await setDoc(userRef, userData);
+  } else {
+    // Only update core fields to avoid overwriting custom status or phone if set elsewhere
+    await updateDoc(userRef, {
+      name: user.displayName || userDoc.data()?.name,
+      photo: user.photoURL || userDoc.data()?.photo,
+      photoURL: user.photoURL || userDoc.data()?.photoURL,
+      phoneNumber: user.phoneNumber || userDoc.data()?.phoneNumber,
+      lastSeen: serverTimestamp(),
+      isOnline: true
+    });
+  }
+}
+
+// Utility to update user presence/status
+export async function updateUserPresence(isOnline: boolean) {
+  const user = auth.currentUser;
+  if (!user) return;
+
+  const userRef = doc(db, 'users', user.uid);
+  try {
+    await updateDoc(userRef, {
+      isOnline,
+      lastSeen: serverTimestamp()
+    });
+  } catch (error) {
+    console.error("Error updating presence:", error);
+  }
 }
 
 // Utility to send a message to a receiver
@@ -179,6 +232,29 @@ export async function sendVoiceNote(blob: Blob, receiverId: string) {
       senderId: myUid,
       createdAt: serverTimestamp(),
     },
+    updatedAt: serverTimestamp(),
+  });
+
+  return url;
+}
+
+// Utility to update user profile picture
+export async function updateProfilePicture(file: File) {
+  const user = auth.currentUser;
+  if (!user) throw new Error("Auth required");
+
+  // 1. Upload to storage
+  const path = `profiles/${user.uid}/avatar_${Date.now()}`;
+  const url = await uploadFile(file, path);
+
+  // 2. Update Auth Profile (so auth.currentUser.photoURL stays in sync)
+  await updateProfile(user, { photoURL: url });
+
+  // 3. Update Firestore
+  const userRef = doc(db, 'users', user.uid);
+  await updateDoc(userRef, {
+    photo: url,
+    photoURL: url,
     updatedAt: serverTimestamp(),
   });
 

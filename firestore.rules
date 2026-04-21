@@ -31,7 +31,8 @@ service cloud.firestore {
         && (!('username' in data) || (data.username is string || data.username == null))
         && (!('uid' in data) || (data.uid == request.auth.uid))
         && (!('isOnline' in data) || (data.isOnline is bool))
-        && (!('lastSeen' in data) || (data.lastSeen is timestamp));
+        && (!('lastSeen' in data) || (data.lastSeen is timestamp))
+        && (!('updatedAt' in data) || (data.updatedAt is timestamp));
     }
 
     function isValidChat(data) {
@@ -53,7 +54,10 @@ service cloud.firestore {
       allow get, list: if isSignedIn();
       allow create: if isOwner(userId) && isValidUser(incoming());
       allow update: if isOwner(userId) && isValidUser(incoming())
-        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'statusMessage', 'isOnline', 'lastSeen', 'email', 'username', 'uid', 'phoneNumber', 'name', 'photo']);
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'displayName', 'photoURL', 'statusMessage', 'isOnline', 'lastSeen', 
+          'email', 'username', 'uid', 'phoneNumber', 'name', 'photo', 'updatedAt'
+        ]);
     }
 
     match /chats/{chatId} {

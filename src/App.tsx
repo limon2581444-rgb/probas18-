@@ -5,9 +5,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuthState } from 'react-firebase-hooks/auth';
-import { auth, db, saveUser } from './lib/firebase';
+import { useDocumentData } from 'react-firebase-hooks/firestore';
+import { auth, db, saveUser, updateUserPresence } from './lib/firebase';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import AuthScreen from './components/auth/AuthScreen';
+import ProfileSetup from './components/auth/ProfileSetup';
 import ChatList from './components/chat/ChatList';
 import ChatWindow from './components/chat/ChatWindow';
 import CallOverlay from './components/chat/CallOverlay';
@@ -20,7 +22,11 @@ export default function App() {
   const [user, loading] = useAuthState(auth);
   const [selectedChatId, setSelectedChatId] = useState<string | undefined>();
   
-  // Incoming call state
+  // Real-time user profile check
+  const userRef = user ? doc(db, 'users', user.uid) : null;
+  const [profile, profileLoading] = useDocumentData(userRef) as unknown as [UserProfileType | undefined, boolean, any];
+  
+  const isProfileIncomplete = user && !profileLoading && profile && (!profile.name || !profile.phoneNumber);
   const [incomingCall, setIncomingCall] = useState<{
     offer: any;
     from: string;
@@ -47,10 +53,37 @@ export default function App() {
     }
   }, [user]);
 
-  // Ensure user document exists in Firestore
+  // Ensure user document exists in Firestore and manage presence
   useEffect(() => {
     if (user) {
       saveUser().catch(console.error);
+
+      // Dynamic presence management
+      const handleVisibilityChange = () => {
+        updateUserPresence(document.visibilityState === 'visible');
+      };
+
+      const handleOnline = () => updateUserPresence(true);
+      const handleOffline = () => updateUserPresence(false);
+
+      window.addEventListener('visibilitychange', handleVisibilityChange);
+      window.addEventListener('online', handleOnline);
+      window.addEventListener('offline', handleOffline);
+      
+      // Heartbeat to keep status fresh
+      const interval = setInterval(() => {
+        if (document.visibilityState === 'visible') {
+          updateUserPresence(true);
+        }
+      }, 60000); // 1 minute heartbeat
+
+      return () => {
+        window.removeEventListener('visibilitychange', handleVisibilityChange);
+        window.removeEventListener('online', handleOnline);
+        window.removeEventListener('offline', handleOffline);
+        clearInterval(interval);
+        updateUserPresence(false);
+      };
     }
   }, [user]);
 
@@ -65,6 +98,10 @@ export default function App() {
 
   if (!user) {
     return <AuthScreen />;
+  }
+
+  if (isProfileIncomplete) {
+    return <ProfileSetup onComplete={() => {}} />;
   }
 
   return (
