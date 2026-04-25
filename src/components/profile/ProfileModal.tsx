@@ -28,8 +28,8 @@ export default function ProfileModal({ isOpen, onClose }: { isOpen: boolean, onC
       setTimeout(() => setSuccess(false), 3000);
     } catch (error: any) {
       console.error("Error updating profile picture:", error);
-      if (error.code === 'storage/retry-limit-exceeded') {
-        alert("Upload failed: Firebase Storage might not be enabled. Please ensure you have enabled 'Storage' in your Firebase Console and set up the default bucket.");
+      if (error.message?.includes('timed out') || error.message?.includes('Storage')) {
+        alert("Upload Timeout: Firebase Storage might not be enabled yet.\n\nTo fix this:\n1. Open Firebase Console\n2. Click 'Storage' on the left\n3. Click 'Get Started'\n4. Set up your bucket with default rules\n5. Try again!");
       } else {
         alert("Failed to update profile picture: " + (error.message || "Unknown error"));
       }

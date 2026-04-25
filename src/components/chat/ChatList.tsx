@@ -60,18 +60,38 @@ export default function ChatList({ onSelectChat, selectedChatId }: { onSelectCha
     setIsSearching(true);
     try {
       const usersRef = collection(db, 'users');
-      // Search by phone number (exact match with +880 logic)
-      let queryPhone = searchTerm.trim();
-      if (!queryPhone.startsWith('+')) {
+      const term = searchTerm.trim();
+      
+      // We'll run two queries in parallel for better user experience: 
+      // one for phone and one for name (exact match as per user snippet)
+      
+      // 1. Phone number query logic
+      let queryPhone = term;
+      if (!queryPhone.startsWith('+') && /^\d+$/.test(queryPhone)) {
         queryPhone = `+880${queryPhone}`;
       }
       
-      const q = query(usersRef, where('phoneNumber', '==', queryPhone));
-      const snap = await getDocs(q);
-      const results = snap.docs
-        .map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile))
+      const qPhone = query(usersRef, where('phoneNumber', '==', queryPhone));
+      const qName = query(usersRef, where('displayName', '==', term));
+      const qNameAlt = query(usersRef, where('name', '==', term));
+      
+      const [snapPhone, snapName, snapNameAlt] = await Promise.all([
+        getDocs(qPhone),
+        getDocs(qName),
+        getDocs(qNameAlt)
+      ]);
+      
+      const allResults = [
+        ...snapPhone.docs.map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile)),
+        ...snapName.docs.map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile)),
+        ...snapNameAlt.docs.map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile))
+      ];
+      
+      // Deduplicate by uid and remove self
+      const uniqueResults = Array.from(new Map(allResults.map(u => [u.uid, u])).values())
         .filter(u => u.uid !== auth.currentUser?.uid);
-      setSearchResults(results);
+        
+      setSearchResults(uniqueResults);
     } catch (error) {
       console.error(error);
     } finally {

@@ -13,12 +13,19 @@ export const googleProvider = new GoogleAuthProvider();
 export const facebookProvider = new FacebookAuthProvider();
 
 // Utility for file uploads
-export async function uploadFile(file: File, path: string) {
-  console.log("Attempting upload to bucket:", firebaseConfig.storageBucket);
+export async function uploadFile(file: File | Blob, path: string) {
+  if (!firebaseConfig.storageBucket) {
+    throw new Error("Firebase Storage Bucket is missing in configuration. Please check firebase-applet-config.json.");
+  }
+
+  console.log("Starting upload to:", firebaseConfig.storageBucket, "Path:", path);
   
   const uploadTask = async () => {
     const storageRef = ref(storage, path);
-    await uploadBytes(storageRef, file);
+    const metadata = {
+      contentType: (file as any).type || 'application/octet-stream',
+    };
+    await uploadBytes(storageRef, file, metadata);
     return getDownloadURL(storageRef);
   };
 
@@ -202,12 +209,10 @@ export async function sendVoiceNote(blob: Blob, receiverId: string) {
   const myUid = auth.currentUser?.uid;
   if (!myUid) throw new Error("Auth required");
 
-  // 1. Upload to storage
+  // 1. Upload to storage using consolidated utility
   const timestamp = Date.now();
   const path = `voice_notes/${timestamp}_voice.webm`;
-  const storageRef = ref(storage, path);
-  await uploadBytes(storageRef, blob);
-  const url = await getDownloadURL(storageRef);
+  const url = await uploadFile(blob, path);
 
   // 2. Get or create chat
   const chatId = await getOrCreateChat(receiverId);
