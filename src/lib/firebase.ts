@@ -87,14 +87,19 @@ export async function saveUser() {
   const userRef = doc(db, 'users', user.uid);
   const userDoc = await getDoc(userRef);
   
+  const username = user.email ? user.email.split("@")[0] : (user.phoneNumber ? user.phoneNumber.slice(-4) : 'user_' + user.uid.slice(0, 5));
+  
   const userData = {
     name: user.displayName,
+    displayName: user.displayName,
     email: user.email,
     photo: user.photoURL,
     photoURL: user.photoURL,
     uid: user.uid,
     phoneNumber: user.phoneNumber,
-    username: user.email ? user.email.split("@")[0] : (user.phoneNumber ? user.phoneNumber.slice(-4) : null),
+    username: username,
+    username_lowercase: username.toLowerCase(),
+    name_lowercase: user.displayName ? user.displayName.toLowerCase() : null,
     lastSeen: serverTimestamp(),
     isOnline: true
   };
@@ -102,12 +107,16 @@ export async function saveUser() {
   if (!userDoc.exists()) {
     await setDoc(userRef, userData);
   } else {
-    // Only update core fields to avoid overwriting custom status or phone if set elsewhere
+    // Ensure critical fields are updated even if doc exists
     await updateDoc(userRef, {
       name: user.displayName || userDoc.data()?.name,
+      displayName: user.displayName || userDoc.data()?.displayName,
       photo: user.photoURL || userDoc.data()?.photo,
       photoURL: user.photoURL || userDoc.data()?.photoURL,
       phoneNumber: user.phoneNumber || userDoc.data()?.phoneNumber,
+      username: userDoc.data()?.username || username,
+      username_lowercase: userDoc.data()?.username_lowercase || username.toLowerCase(),
+      name_lowercase: (user.displayName || userDoc.data()?.name)?.toLowerCase() || null,
       lastSeen: serverTimestamp(),
       isOnline: true
     });

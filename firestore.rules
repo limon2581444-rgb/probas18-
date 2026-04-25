@@ -32,7 +32,9 @@ service cloud.firestore {
         && (!('uid' in data) || (data.uid == request.auth.uid))
         && (!('isOnline' in data) || (data.isOnline is bool))
         && (!('lastSeen' in data) || (data.lastSeen is timestamp))
-        && (!('updatedAt' in data) || (data.updatedAt is timestamp));
+        && (!('updatedAt' in data) || (data.updatedAt is timestamp))
+        && (!('username_lowercase' in data) || (data.username_lowercase is string || data.username_lowercase == null))
+        && (!('name_lowercase' in data) || (data.name_lowercase is string || data.name_lowercase == null));
     }
 
     function isValidChat(data) {
@@ -56,7 +58,8 @@ service cloud.firestore {
       allow update: if isOwner(userId) && isValidUser(incoming())
         && incoming().diff(existing()).affectedKeys().hasOnly([
           'displayName', 'photoURL', 'statusMessage', 'isOnline', 'lastSeen', 
-          'email', 'username', 'uid', 'phoneNumber', 'name', 'photo', 'updatedAt'
+          'email', 'username', 'uid', 'phoneNumber', 'name', 'photo', 'updatedAt',
+          'username_lowercase', 'name_lowercase'
         ]);
     }
 

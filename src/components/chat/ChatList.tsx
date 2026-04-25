@@ -74,17 +74,31 @@ export default function ChatList({ onSelectChat, selectedChatId }: { onSelectCha
       const qPhone = query(usersRef, where('phoneNumber', '==', queryPhone));
       const qName = query(usersRef, where('displayName', '==', term));
       const qNameAlt = query(usersRef, where('name', '==', term));
+      const qUsername = query(usersRef, where('username', '==', term));
+      const qEmail = query(usersRef, where('email', '==', term));
       
-      const [snapPhone, snapName, snapNameAlt] = await Promise.all([
+      const termLower = term.toLowerCase();
+      const qNameLower = query(usersRef, where('name_lowercase', '==', termLower));
+      const qUserLower = query(usersRef, where('username_lowercase', '==', termLower));
+      
+      const [snapPhone, snapName, snapNameAlt, snapUsername, snapEmail, snapNameLower, snapUserLower] = await Promise.all([
         getDocs(qPhone),
         getDocs(qName),
-        getDocs(qNameAlt)
+        getDocs(qNameAlt),
+        getDocs(qUsername),
+        getDocs(qEmail),
+        getDocs(qNameLower),
+        getDocs(qUserLower)
       ]);
       
       const allResults = [
         ...snapPhone.docs.map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile)),
         ...snapName.docs.map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile)),
-        ...snapNameAlt.docs.map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile))
+        ...snapNameAlt.docs.map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile)),
+        ...snapUsername.docs.map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile)),
+        ...snapEmail.docs.map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile)),
+        ...snapNameLower.docs.map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile)),
+        ...snapUserLower.docs.map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile))
       ];
       
       // Deduplicate by uid and remove self
@@ -193,7 +207,7 @@ export default function ChatList({ onSelectChat, selectedChatId }: { onSelectCha
               {searchingDB ? (
                 <div className="flex justify-center p-8"><Loader2 className="animate-spin text-imo-blue" /></div>
               ) : searchResults.length === 0 ? (
-                <div className="text-center p-8 text-slate-400 text-sm">No users found for this phone number.</div>
+                <div className="text-center p-8 text-slate-400 text-sm">No users found for this query.</div>
               ) : (
                 searchResults.map(u => (
                   <button 
