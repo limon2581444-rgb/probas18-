@@ -107,16 +107,17 @@ export async function saveUser() {
   if (!userDoc.exists()) {
     await setDoc(userRef, userData);
   } else {
-    // Ensure critical fields are updated even if doc exists
+    // Force update of search fields and basic info
+    const existingData = userDoc.data();
     await updateDoc(userRef, {
-      name: user.displayName || userDoc.data()?.name,
-      displayName: user.displayName || userDoc.data()?.displayName,
-      photo: user.photoURL || userDoc.data()?.photo,
-      photoURL: user.photoURL || userDoc.data()?.photoURL,
-      phoneNumber: user.phoneNumber || userDoc.data()?.phoneNumber,
-      username: userDoc.data()?.username || username,
-      username_lowercase: userDoc.data()?.username_lowercase || username.toLowerCase(),
-      name_lowercase: (user.displayName || userDoc.data()?.name)?.toLowerCase() || null,
+      name: user.displayName || existingData?.name,
+      displayName: user.displayName || existingData?.displayName,
+      photo: user.photoURL || existingData?.photo,
+      photoURL: user.photoURL || existingData?.photoURL,
+      phoneNumber: user.phoneNumber || existingData?.phoneNumber,
+      username: existingData?.username || username,
+      username_lowercase: (existingData?.username || username).toLowerCase(),
+      name_lowercase: (user.displayName || existingData?.displayName || existingData?.name)?.toLowerCase() || null,
       lastSeen: serverTimestamp(),
       isOnline: true
     });
@@ -266,9 +267,15 @@ export async function updateProfilePicture(file: File) {
 
   // 3. Update Firestore
   const userRef = doc(db, 'users', user.uid);
+  const userDoc = await getDoc(userRef);
+  const existingData = userDoc.data();
+  
+  const displayName = user.displayName || existingData?.displayName || existingData?.name;
+  
   await updateDoc(userRef, {
     photo: url,
     photoURL: url,
+    name_lowercase: displayName ? displayName.toLowerCase() : null,
     updatedAt: serverTimestamp(),
   });
 

@@ -21,10 +21,12 @@ export default function ProfileSetup({ onComplete }: { onComplete: () => void })
       
       // 2. Update Firestore document
       const userRef = doc(db, 'users', user.uid);
+      const phoneNumber = user.phoneNumber || (phone.startsWith('+') ? phone : `+880${phone}`);
       await updateDoc(userRef, {
         name,
         displayName: name,
-        phoneNumber: user.phoneNumber || (phone.startsWith('+') ? phone : `+880${phone}`),
+        name_lowercase: name.toLowerCase(),
+        phoneNumber,
         updatedAt: serverTimestamp(),
       });
       

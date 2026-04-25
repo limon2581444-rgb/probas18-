@@ -2,8 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Phone, Video, MoreVertical, Send, Smile, Paperclip, Mic, Image as ImageIcon, ChevronLeft, Loader2, Play, Pause, Trash2, StopCircle } from 'lucide-react';
 import { cn, formatTimestamp } from '../../lib/utils';
-import { db, auth, Message, Chat, UserProfile, uploadFile, sendVoiceNote } from '../../lib/firebase';
-import { collection, query, orderBy, addDoc, serverTimestamp, doc, updateDoc } from 'firebase/firestore';
+import { db, auth, Message, Chat, UserProfile, uploadFile, sendVoiceNote, sendMessage } from '../../lib/firebase';
+import { collection, query, orderBy, serverTimestamp, doc, updateDoc } from 'firebase/firestore';
 import { useCollectionData, useDocumentData } from 'react-firebase-hooks/firestore';
 import { v4 as uuidv4 } from 'uuid';
 import { socket } from '../../lib/socket';
@@ -80,7 +80,7 @@ export default function ChatWindow({ chatId, onBack }: { chatId: string, onBack:
   // Real-time messages
   const messagesQuery = query(
     collection(db, 'chats', chatId, 'messages'),
-    orderBy('time', 'asc')
+    orderBy('createdAt', 'asc')
   );
   
   const [values, loading, , snapshot] = useCollectionData(messagesQuery);
@@ -94,10 +94,10 @@ export default function ChatWindow({ chatId, onBack }: { chatId: string, onBack:
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages]);
+  }, [messages, isOtherUserTyping]);
 
   const handleSendMessage = async () => {
-    if (!message.trim() || !auth.currentUser) return;
+    if (!message.trim() || !otherParticipantId) return;
     
     setSending(true);
     const textToSend = message.trim();
@@ -107,26 +107,10 @@ export default function ChatWindow({ chatId, onBack }: { chatId: string, onBack:
     if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current);
     }
-    if (otherParticipantId) {
-        socket.emit('typing', { to: otherParticipantId, chatId, isTyping: false });
-    }
+    socket.emit('typing', { to: otherParticipantId, chatId, isTyping: false });
     
     try {
-      await addDoc(collection(db, 'chats', chatId, 'messages'), {
-        text: textToSend,
-        senderId: auth.currentUser.uid,
-        type: 'text',
-        createdAt: serverTimestamp(),
-      });
-
-      await updateDoc(doc(db, 'chats', chatId), {
-        lastMessage: {
-          text: textToSend,
-          senderId: auth.currentUser.uid,
-          createdAt: serverTimestamp(),
-        },
-        updatedAt: serverTimestamp(),
-      });
+      await sendMessage(textToSend, otherParticipantId);
     } catch (error) {
       console.error("Error sending message:", error);
     } finally {
@@ -136,29 +120,11 @@ export default function ChatWindow({ chatId, onBack }: { chatId: string, onBack:
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !auth.currentUser) return;
+    if (!file || !otherParticipantId) return;
 
     setSending(true);
     try {
-      const path = `chats/${chatId}/${uuidv4()}_${file.name}`;
-      const url = await uploadFile(file, path);
-
-      await addDoc(collection(db, 'chats', chatId, 'messages'), {
-        text: '',
-        senderId: auth.currentUser.uid,
-        type: 'image',
-        mediaUrl: url,
-        createdAt: serverTimestamp(),
-      });
-
-      await updateDoc(doc(db, 'chats', chatId), {
-        lastMessage: {
-          text: 'Shared an image',
-          senderId: auth.currentUser.uid,
-          createdAt: serverTimestamp(),
-        },
-        updatedAt: serverTimestamp(),
-      });
+      await sendImage(file, otherParticipantId);
     } catch (error) {
       console.error("Error uploading image:", error);
     } finally {
@@ -235,7 +201,16 @@ export default function ChatWindow({ chatId, onBack }: { chatId: string, onBack:
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#f8faff] w-full">
+    <div className="flex flex-col h-full bg-[#e5ddd5] w-full relative overflow-hidden">
+      {/* WhatsApp background pattern overlay */}
+      <div 
+        className="absolute inset-0 opacity-[0.06] pointer-events-none" 
+        style={{ 
+          backgroundImage: `url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')`,
+          backgroundSize: '400px'
+        }}
+      ></div>
+      
       <CallOverlay 
         isOpen={isCallOpen} 
         onClose={() => {
@@ -322,78 +297,93 @@ export default function ChatWindow({ chatId, onBack }: { chatId: string, onBack:
           </div>
         ) : (
           messages?.map((msg, i) => {
-            const isMe = msg.senderId === auth.currentUser?.uid || (msg as any).sender === auth.currentUser?.uid;
-            const msgTime = msg.createdAt || (msg as any).time;
-            const time = msgTime ? formatTimestamp(msgTime.toDate()) : '';
+            const isMe = msg.senderId === auth.currentUser?.uid || msg.sender === auth.currentUser?.uid;
+            const msgTime = msg.createdAt || msg.time;
+            const time = (msgTime && typeof msgTime.toDate === 'function') ? formatTimestamp(msgTime.toDate()) : 'Pending...';
             
             return (
               <motion.div
                 key={msg.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
                 className={cn(
-                  "flex",
+                  "flex w-full",
                   isMe ? "justify-end" : "justify-start"
                 )}
               >
                 <div className={cn(
-                  "max-w-[70%] group relative",
+                  "max-w-[85%] md:max-w-[70%] group relative flex flex-col",
                   isMe ? "items-end" : "items-start"
                 )}>
                   <div className={cn(
-                    "px-1 py-1 shadow-sm",
+                    "relative px-4 py-2 shadow-sm transition-all",
                     isMe 
-                      ? "bg-imo-blue text-white rounded-t-2xl rounded-bl-2xl rounded-br-sm" 
-                      : "bg-white text-slate-700 rounded-t-2xl rounded-br-2xl rounded-bl-sm",
-                    msg.type === 'text' && "px-5 py-3.5"
+                      ? "bg-[#dcf8c6] text-slate-800 rounded-l-2xl rounded-tr-2xl rounded-br-sm border border-[#c7e9af]" 
+                      : "bg-white text-slate-800 rounded-r-2xl rounded-tl-2xl rounded-bl-sm border border-slate-100",
+                    msg.type === 'text' && "min-w-[80px]"
                   )}>
+                    {/* Tail for WhatsApp looks */}
+                    <div className={cn(
+                      "absolute top-0 w-3 h-3",
+                      isMe 
+                        ? "-right-2 bg-[#dcf8c6] border-t border-r border-[#c7e9af]" 
+                        : "-left-2 bg-white border-t border-l border-slate-100"
+                    )} style={{ 
+                        clipPath: isMe ? 'polygon(0 0, 0 100%, 100% 0)' : 'polygon(100% 0, 100% 100%, 0 0)',
+                    }}></div>
+
                     {msg.type === 'image' ? (
-                      <div className="relative rounded-xl overflow-hidden group">
+                      <div className="relative rounded-lg overflow-hidden group/img mt-1">
                         <img 
                           src={msg.image || msg.mediaUrl} 
                           alt="Shared image" 
-                          className="max-h-60 w-full object-cover rounded-xl"
+                          className="max-h-80 w-full object-cover rounded-lg"
                           referrerPolicy="no-referrer"
                         />
-                        <div className="absolute inset-0 bg-black/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                        <div className="absolute inset-0 bg-black/5 opacity-0 group-hover/img:opacity-100 transition-opacity"></div>
                       </div>
                     ) : msg.type === 'voice' ? (
-                      <div className="flex items-center gap-3 min-w-[200px]">
+                      <div className="flex items-center gap-3 min-w-[220px] py-1">
                         <button className={cn(
-                          "w-10 h-10 rounded-full flex items-center justify-center transition-all",
-                          isMe ? "bg-white/20 text-white" : "bg-imo-blue/10 text-imo-blue"
+                          "w-10 h-10 rounded-full flex items-center justify-center shadow-sm transition-all",
+                          isMe ? "bg-[#71ce3a] text-white" : "bg-imo-blue text-white"
                         )}>
                           <Play size={18} fill="currentColor" />
                         </button>
                         <div className="flex-grow">
                           <div className={cn(
-                            "h-1 rounded-full w-full",
-                            isMe ? "bg-white/20" : "bg-slate-100"
+                            "h-1.5 rounded-full w-full",
+                            isMe ? "bg-[#c7e9af]" : "bg-slate-100"
                           )}>
                             <div className={cn(
                               "h-full rounded-full w-1/3",
-                              isMe ? "bg-white" : "bg-imo-blue"
+                              isMe ? "bg-[#71ce3a]" : "bg-imo-blue"
                             )}></div>
                           </div>
-                          <div className={cn(
-                            "text-[9px] mt-1 font-bold uppercase",
-                            isMe ? "text-white/60" : "text-slate-400"
-                          )}>
-                            Voice Note
+                          <div className="flex justify-between items-center mt-1">
+                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">0:14 / Voice</span>
                           </div>
                         </div>
                         <audio src={msg.mediaUrl} className="hidden" controls />
                       </div>
                     ) : (
-                      <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.text}</p>
+                      <div className="flex flex-col">
+                        <p className="text-[15px] leading-snug whitespace-pre-wrap">{msg.text}</p>
+                      </div>
                     )}
-                  </div>
-                  <div className={cn(
-                    "flex items-center gap-1 mt-1.5 px-1",
-                    isMe ? "flex-row-reverse" : "flex-row"
-                  )}>
-                    <span className="text-[10px] text-slate-400 font-medium uppercase tracking-tight">{time}</span>
-                    {isMe && <div className="w-1 h-1 bg-imo-blue rounded-full opacity-50"></div>}
+                    
+                    {/* Timestamp inside bubble to match WhatsApp style better */}
+                    <div className="flex justify-end items-center gap-1 mt-1 -mr-1">
+                      <span className="text-[10px] text-slate-400 font-medium">{time}</span>
+                      {isMe && (
+                         <div className="flex">
+                            <svg width="16" height="11" viewBox="0 0 16 11" fill="none" xmlns="http://www.w3.org/2000/svg">
+                               <path d="M1 5L5 9L14.5 1" stroke="#4FB6EB" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                               <path d="M5.5 5L9.5 9L19 1" stroke="#4FB6EB" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" transform="translate(-4, 0)"/>
+                            </svg>
+                         </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </motion.div>

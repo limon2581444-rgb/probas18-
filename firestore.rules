@@ -64,19 +64,16 @@ service cloud.firestore {
     }
 
     match /chats/{chatId} {
-      allow get: if isSignedIn() && request.auth.uid in existing().participants;
-      allow list: if isSignedIn() && request.auth.uid in resource.data.participants;
-      allow create: if isSignedIn() && isValidId(chatId) && isValidChat(incoming());
+      allow get, list: if isSignedIn() && (resource == null || request.auth.uid in resource.data.participants);
+      allow create: if isSignedIn() && request.auth.uid in incoming().participants && isValidChat(incoming());
       allow update: if isSignedIn() && request.auth.uid in existing().participants
-        && (
-          incoming().diff(existing()).affectedKeys().hasOnly(['lastMessage', 'updatedAt'])
-        );
-    }
+        && incoming().diff(existing()).affectedKeys().hasOnly(['lastMessage', 'updatedAt']);
 
-    match /chats/{chatId}/messages/{messageId} {
-      allow read: if isParticipant(chatId);
-      allow create: if isParticipant(chatId) && isValidId(messageId) && isValidMessage(incoming());
-      allow delete, update: if false; // Messages are immutable for now
+      match /messages/{messageId} {
+        allow read, list: if isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+        allow create: if isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants && isValidMessage(incoming());
+        allow delete, update: if false;
+      }
     }
 
     match /system/connection_test {

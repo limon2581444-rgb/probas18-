@@ -71,34 +71,46 @@ export default function ChatList({ onSelectChat, selectedChatId }: { onSelectCha
         queryPhone = `+880${queryPhone}`;
       }
       
+      const termLower = term.toLowerCase();
+      
+      // We'll run multiple queries in parallel for maximum flexibility
+      // 1. Phone matching
       const qPhone = query(usersRef, where('phoneNumber', '==', queryPhone));
-      const qName = query(usersRef, where('displayName', '==', term));
-      const qNameAlt = query(usersRef, where('name', '==', term));
-      const qUsername = query(usersRef, where('username', '==', term));
+      
+      // 2. Exact email matching
       const qEmail = query(usersRef, where('email', '==', term));
       
-      const termLower = term.toLowerCase();
-      const qNameLower = query(usersRef, where('name_lowercase', '==', termLower));
-      const qUserLower = query(usersRef, where('username_lowercase', '==', termLower));
+      // 3. Prefix matching for username and name (standard firestore prefix pattern)
+      const qUserPrefix = query(usersRef, 
+        where('username_lowercase', '>=', termLower), 
+        where('username_lowercase', '<=', termLower + '\uf8ff')
+      );
       
-      const [snapPhone, snapName, snapNameAlt, snapUsername, snapEmail, snapNameLower, snapUserLower] = await Promise.all([
+      const qNamePrefix = query(usersRef, 
+        where('name_lowercase', '>=', termLower), 
+        where('name_lowercase', '<=', termLower + '\uf8ff')
+      );
+      
+      // 4. Exact matches for legacy or un-synced fields
+      const qNameExact = query(usersRef, where('displayName', '==', term));
+      const qNameAltExact = query(usersRef, where('name', '==', term));
+      
+      const [snapPhone, snapEmail, snapUserPrefix, snapNamePrefix, snapNameExact, snapNameAltExact] = await Promise.all([
         getDocs(qPhone),
-        getDocs(qName),
-        getDocs(qNameAlt),
-        getDocs(qUsername),
         getDocs(qEmail),
-        getDocs(qNameLower),
-        getDocs(qUserLower)
+        getDocs(qUserPrefix),
+        getDocs(qNamePrefix),
+        getDocs(qNameExact),
+        getDocs(qNameAltExact)
       ]);
       
       const allResults = [
         ...snapPhone.docs.map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile)),
-        ...snapName.docs.map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile)),
-        ...snapNameAlt.docs.map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile)),
-        ...snapUsername.docs.map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile)),
         ...snapEmail.docs.map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile)),
-        ...snapNameLower.docs.map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile)),
-        ...snapUserLower.docs.map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile))
+        ...snapUserPrefix.docs.map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile)),
+        ...snapNamePrefix.docs.map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile)),
+        ...snapNameExact.docs.map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile)),
+        ...snapNameAltExact.docs.map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile))
       ];
       
       // Deduplicate by uid and remove self
@@ -171,17 +183,25 @@ export default function ChatList({ onSelectChat, selectedChatId }: { onSelectCha
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-              placeholder="Search by phone (+880...)" 
-              className="w-full bg-slate-50 border-none rounded-xl py-3 pl-10 pr-10 text-sm focus:ring-1 focus:ring-imo-blue transition-all outline-none"
+              placeholder="Search by name, username or phone..." 
+              className="w-full bg-slate-50 border-none rounded-xl py-3 pl-10 pr-24 text-sm focus:ring-1 focus:ring-imo-blue transition-all outline-none"
             />
-            {searchTerm && (
+            <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-1">
+              {searchTerm && (
+                <button 
+                  onClick={() => { setSearchTerm(''); setIsSearching(false); }}
+                  className="p-2 text-slate-300 hover:text-slate-500"
+                >
+                  <X size={14} />
+                </button>
+              )}
               <button 
-                onClick={() => { setSearchTerm(''); setIsSearching(false); }}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500"
+                onClick={handleSearch}
+                className="bg-imo-blue text-white px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider shadow-sm hover:scale-105 transition-all"
               >
-                <X size={14} />
+                Search
               </button>
-            )}
+            </div>
           </div>
           
           <div className="relative group">
@@ -225,7 +245,10 @@ export default function ChatList({ onSelectChat, selectedChatId }: { onSelectCha
                       )}
                     </div>
                     <div className="text-left flex-grow">
-                      <p className="font-bold text-slate-800 text-lg">{u.displayName || u.name || 'User'}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-bold text-slate-800 text-lg">{u.displayName || u.name || 'User'}</p>
+                        {u.username && <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-mono">@{u.username}</span>}
+                      </div>
                       <p className="text-xs text-slate-400 font-medium">{u.phoneNumber}</p>
                       {u.isOnline && <p className="text-[10px] text-green-500 font-bold uppercase tracking-wider mt-0.5">Online Now</p>}
                     </div>
@@ -392,7 +415,7 @@ function ChatItem({ chat, isSelected, onClick }: ChatItemProps) {
   const otherUserRef = otherParticipantId ? doc(db, 'users', otherParticipantId) : null;
   const [otherUser] = useDocumentData(otherUserRef) as unknown as [UserProfile | undefined, boolean, any];
 
-  const time = chat.updatedAt ? formatTimestamp(chat.updatedAt.toDate()) : '';
+  const time = (chat.updatedAt && typeof chat.updatedAt.toDate === 'function') ? formatTimestamp(chat.updatedAt.toDate()) : '';
 
   return (
     <motion.button
